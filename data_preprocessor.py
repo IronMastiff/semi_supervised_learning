@@ -7,8 +7,6 @@ import numpy as np
 from scipy.io import loadmat
 import tensorflow as tf
 
-import utils
-
 '''--------Scale data to target size--------'''
 def scale( x, feature_range = ( -1, 1 ) ):
     # Scale to ( 0 ,1 )
