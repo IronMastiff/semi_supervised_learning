@@ -36,7 +36,7 @@ def download_data():
                 pbar.hook
             )
 
-    if not isflie( data_dir + 'test_32x32.mat' ):
+    if not isfile( data_dir + 'test_32x32.mat' ):
         with DLProgress( unit = 'B', unit_scale = True, miniters = 1, desc = 'SVHN Testing Set' ) as pbar:
             urlretrieve(
                 'http://ufldl.stanford.edu/housenumbers/test_32x32.mat',
