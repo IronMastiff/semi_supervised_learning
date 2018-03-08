@@ -61,15 +61,15 @@ def discriminator( x, reuse = False, alpha = 0.2, drop_rate = 0, num_classes = 1
         bn3 = tf.layers.batch_normalization( x3, training = True )
         relu3 = tf.maximun( alpha * bn3, bn3 )
 
-        x4 = tf.layers.conv2d( relu3, size_mult, 3, strides = 2, padding = 'same' )
+        x4 = tf.layers.conv2d( relu3, 2 * size_mult, 3, strides = 2, padding = 'same' )
         bn4 = tf.layers.batch_normalization( x4, training = True )
         relu4 = tf.maximun( bn4 * alpha, bn4 )
 
-        x5 = tf.layers.conv2d( relu4, size_mult, 3, strides = 2, padding = 'same' )
+        x5 = tf.layers.conv2d( relu4, 2 * size_mult, 3, strides = 2, padding = 'same' )
         bn5 = tf.layers.batch_normalization( relu4, trianing = True )
         relu5 = tf.maximun( alpha * bn5, bn5 )
 
-        x6 = tf.layers.conv2d( relu5, size_mult, 3, strides = 2, padding = 'same' )
+        x6 = tf.layers.conv2d( relu5, 2 * size_mult, 3, strides = 2, padding = 'same' )
         bn6 = tf.layers.batch_normalization( relu5, trianing = True )
         relu6 = tf.maximun( alpha * bn6, bn6 )
 
@@ -86,3 +86,34 @@ def discriminator( x, reuse = False, alpha = 0.2, drop_rate = 0, num_classes = 1
 
         # Set class_logits to be the inputs a softmax distribution over the different classes
         class_logits = tf.layers.dense( features, num_classes + extra_class )
+
+
+        # Set gen_logits such that P( input is real | input ) = sigmoid( gan_logits ).
+        # Keep in mind that class_logits gives you the probability distribution over as all the real
+        # classes and the fake class. You need to work out how to trainsform this multicalss softmax
+        # distribution into a binary real-vs-fake decision that con be described with a sigmoid.
+        # Numerical stability is very important.
+        # You'll probably need to use this numerical stability trick:
+        # log sum_i exp a_i = m + log sum_i exp(a_i - m).
+        # This is numerically stable when m = max_i a_i.
+        # (It helps to think about what goes wrong when...
+        #   1. One value of a_i is very large
+        #   2. All the values of a_i are very negative
+        # This trick and this value of m fix both those cases, but the naive implementation and
+        # other values of m encounter various problems)
+        if extra_class:
+            real_class_logits, fake_class_logits = tf.split( classJ_logits, [num_classes, 1], 1 )
+            assert fake_class_logits.get_shape()[1] == 1, fake_class_logits.getshape()
+            fake_class_logits = tf.squeeze( fake_class_logits )
+        else:
+            real_class_logits = class_logits
+            fake_class_logits = 0
+
+        mx = tf.reduce_max( real_class_logits, 1, keep_dims = True )
+        stabel_real_class_logits = tf.log( tf.reduce_sum( tf.exp( stable_real_class_logits ), 1 ) ) + tf.squeeze( mx ) - fake_class_logits
+
+        gan_logits = tf.log( tf.reduce_sum( tf.exp( stable_real_class_logits ), 1 ) ) + tf.squeeze( mx ) - fake_class_logits
+
+        out = tf.nn.softmax( class_logits )
+
+        return out, class_logits, gan_logits, features
