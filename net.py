@@ -102,7 +102,7 @@ def discriminator( x, reuse = False, alpha = 0.2, drop_rate = 0, num_classes = 1
         # This trick and this value of m fix both those cases, but the naive implementation and
         # other values of m encounter various problems)
         if extra_class:
-            real_class_logits, fake_class_logits = tf.split( classJ_logits, [num_classes, 1], 1 )
+            real_class_logits, fake_class_logits = tf.split( class_logits, [num_classes, 1], 1 )
             assert fake_class_logits.get_shape()[1] == 1, fake_class_logits.getshape()
             fake_class_logits = tf.squeeze( fake_class_logits )
         else:
@@ -117,3 +117,55 @@ def discriminator( x, reuse = False, alpha = 0.2, drop_rate = 0, num_classes = 1
         out = tf.nn.softmax( class_logits )
 
         return out, class_logits, gan_logits, features
+
+def model_loss( input_real, input_z, output_dim, y, num_classes, label_mask, alpha = 0.2, drop_rate = 0 ):
+    """
+    Get the loss for the discrimiter and generator
+    :param input_real: Images from the real dataset
+    :param input_z: Z input
+    :param output_dim: The number of channels in teh output image
+    :param y: Integer class labels
+    :param num_classes: The number of classes
+    :param alpha: The slope of the left half of leaky ReLU activation
+    :param drop_rate: The probability of dropping a hidden unit
+    :return: A tupe of ( discriminator loss, generator loss )
+    """
+
+
+    # These number multiply the size of each of the generator and the discriminator,
+    # respectvely. You can reduce them to run your code faster for debugging purposes.
+    g_size_mult = 32
+    d_size_mult = 64
+
+    # Here we run the generator and the discriminatior
+    g_model = generator( input_z, output_dim, alpha = alpha, size_mult = g_size_mult )
+    d_on_data = dicriminator( input_real, alpha = alpha, drop_rete = drop_rate, size_mult = d_size_mult )
+    d_model_real, class_logits_on_data, gan_logits_on_data, data_featrues = d_on_data
+    d_on_samples = discriminator( g_model, reuse = True, alpha = alpha, drop_rate = drop_rate, size_mult = d_size_mult )
+    d_model_fake, class_logits_on_samples, gan_logits_on_samples, samples, sample_featrues = d_on_samples
+
+    # Here we run teh generator and the discriminator.
+    # This should combine two different losses:
+    # 1. The loss for the GAN problem, where we minimize teh cross-entropy for the binary
+    #    real-vs-fake classification problem.
+    # 2. The loss for the SVHN digit classification problem, where we minimize the cross-entropy
+    #    for teh multi-class softmax. For this one we use the labels. Don't forget to ignore
+    #    use 'label_mask' to ignore the examples that we are pretending are unlabeled for teh
+    #    semi-supervised learining problem.
+    d_loss_real = tf.reduce_mean( tf.nn.sigmoid_cross_entropy_with_logits( logits = gan_logits_on_data,
+                                                                           labels = tf.ones_like( gan_logits_on_data ) ) )
+    d_loss_fake = tf.reduce_mean( tf.nn.sigmoid_cross_entropy_with_logits( logits = gan_logits_on_samples,
+                                                                           labels = tf.zeros_like( gan_logits_on_samples ) ) )
+    y = tf.squeeze( y )
+    class_cross_entropy = tf.nn.softmax_cross_entropy_with_logits( logits = class_logits_on_data,
+                                                                   labels = tf.one_hot( y, num_classes + extra_class,
+                                                                                        dtype = tf.float32 ) )
+    class_cross_entropy = tf.squeeze( class_cross_entropy )
+    label_mask = tf.squeeze( tf.to_float( label_mask ) )
+    d_loss_class = tf.reduce_sum( label_mask * class_cross_entropy ) / tf.maximum( 1., tf.reduce_sum( label_mask ) )
+    d_loss = d_loss_class + d_loss_real + d_loss_fake
+
+    # Here we set 'g_loss' to the "feature matching" loss invented by Tim Salimans at OpenAI.
+    # This loss consists of minimizing the absolute difference between the expected features
+    # on the data and the expected features on the generated samples.
+    # This loss works better for semi-supervised leraning than teh trdition GAN losses.
