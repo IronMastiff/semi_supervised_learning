@@ -139,7 +139,7 @@ def model_loss( input_real, input_z, output_dim, y, num_classes, label_mask, alp
 
     # Here we run the generator and the discriminatior
     g_model = generator( input_z, output_dim, alpha = alpha, size_mult = g_size_mult )
-    d_on_data = dicriminator( input_real, alpha = alpha, drop_rete = drop_rate, size_mult = d_size_mult )
+    d_on_data = discriminator( input_real, alpha = alpha, drop_rete = drop_rate, size_mult = d_size_mult )
     d_model_real, class_logits_on_data, gan_logits_on_data, data_featrues = d_on_data
     d_on_samples = discriminator( g_model, reuse = True, alpha = alpha, drop_rate = drop_rate, size_mult = d_size_mult )
     d_model_fake, class_logits_on_samples, gan_logits_on_samples, samples, sample_featrues = d_on_samples
@@ -169,3 +169,13 @@ def model_loss( input_real, input_z, output_dim, y, num_classes, label_mask, alp
     # This loss consists of minimizing the absolute difference between the expected features
     # on the data and the expected features on the generated samples.
     # This loss works better for semi-supervised leraning than teh trdition GAN losses.
+    data_muments = tf.reduce_mean( data_featrues, axis = 0 )
+    sample_moments = tf.reduce_mean( sample_featrues, axis = 0 )
+    g_loss = tf.reduce_mean( tf.abs( data_moments - sample_moments ) )
+
+    pred_class = tf.cast( tf.argmax( class_logits_on_data, 1 ), tf.int32 )
+    eq = tf.equl( tf.squeeze( y ), pred_class )
+    correct = tf.reduce_sum( tf.to_float( eq ) )
+    masked_correct = tf.reduce_sum( label_mask * tf.to_float( eq ) )
+
+    return d_loss, g_loss, correct, masked_correct, g_model
