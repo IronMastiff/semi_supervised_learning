@@ -156,7 +156,7 @@ def model_loss( input_real, input_z, output_dim, y, num_classes, label_mask, alp
                                                                            labels = tf.ones_like( gan_logits_on_data ) ) )
     d_loss_fake = tf.reduce_mean( tf.nn.sigmoid_cross_entropy_with_logits( logits = gan_logits_on_samples,
                                                                            labels = tf.zeros_like( gan_logits_on_samples ) ) )
-    y = tf.squeeze( y )
+    y = tf.squeeze( y )     # tf.squeeze( x ) 去除x中的1
     class_cross_entropy = tf.nn.softmax_cross_entropy_with_logits( logits = class_logits_on_data,
                                                                    labels = tf.one_hot( y, num_classes + extra_class,
                                                                                         dtype = tf.float32 ) )
@@ -169,13 +169,36 @@ def model_loss( input_real, input_z, output_dim, y, num_classes, label_mask, alp
     # This loss consists of minimizing the absolute difference between the expected features
     # on the data and the expected features on the generated samples.
     # This loss works better for semi-supervised leraning than teh trdition GAN losses.
-    data_muments = tf.reduce_mean( data_featrues, axis = 0 )
+    data_mments = tf.reduce_mean( data_featrues, axis = 0 )
     sample_moments = tf.reduce_mean( sample_featrues, axis = 0 )
-    g_loss = tf.reduce_mean( tf.abs( data_moments - sample_moments ) )
+    g_loss = tf.reduce_mean( tf.abs( data_moments - sample_mooments ) )    # tf.abs( x, name = None )取绝对值
 
-    pred_class = tf.cast( tf.argmax( class_logits_on_data, 1 ), tf.int32 )
-    eq = tf.equl( tf.squeeze( y ), pred_class )
+    pred_class = tf.cast( tf.argmax( class_logits_on_data, 1 ), tf.int32 )    # tf.cast( x, dtype, name = None )tf类型转换    tf.argmax( input, axis )返回axis中数值最大的数字的索引位置axis = 0按行，axis = 1按列
+    eq = tf.equal( tf.squeeze( y ), pred_class )
     correct = tf.reduce_sum( tf.to_float( eq ) )
     masked_correct = tf.reduce_sum( label_mask * tf.to_float( eq ) )
 
     return d_loss, g_loss, correct, masked_correct, g_model
+
+def model_opt( d_loss, g_loss, learning_rate, betal ):
+    """
+    Get optimization operations
+    :param d_loss: Discriminator loss Tensor
+    :param g_loss: Generator loss Tensor
+    :param learning_rate: Learning Rate Placeholder
+    :param betal: The exponential decay rate for the 1st moment in the optimaizer
+    :return: A tupe of ( discriminator training operation, generator training operation )
+    """
+    # Get weights and biases to update. Get them separtely for the dicriminator and the generator
+    t_vars = tf.trainable_variables()
+    d_vars = [var for var in t_vars if var.name.startwith( 'discriminator' )]
+    g_vars = [var for var in t_vars if var.name.startwith( 'generator' )]
+    for t in t_vars:
+        assert t in d_vars or t in g_vars
+
+    # Minimize both players' costs simultaneously
+    d_train_opt = tf.train.AdamOptimizer( learning_rate, betal = betal ).minimize( d_loss, var_list = d_vars )
+    g_train_opt = tf.train.AdamOptimizer( learning_rate, betal = betal ).minimize( g_loss, var_list = g_vars )
+    shrink_lr = tf.assign( learning_rate, learning_rate * 0.9 )    # tf.assign( ref, value )用value的值更行ref
+
+    return d_train_opt, g_train_opt, shrink_lr
