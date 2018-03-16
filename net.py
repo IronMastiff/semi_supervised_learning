@@ -202,3 +202,26 @@ def model_opt( d_loss, g_loss, learning_rate, betal ):
     shrink_lr = tf.assign( learning_rate, learning_rate * 0.9 )    # tf.assign( ref, value )用value的值更行ref
 
     return d_train_opt, g_train_opt, shrink_lr
+
+class GAN:
+    """
+    A GAN model.
+    :param real_size: The shape of the real data.
+    :param z_size: The number of entries in the z code vector.
+    :param learnin_rate: The learning rate to use for Adam.
+    :param num_classes: The number of classes to recognize.
+    :param alpha: The slope of the left half of the leaky ReLU activation
+    :param beta1: The beta1 parameter for Adam.
+    """
+    def __init__( self, real_size, z_size, learning_rate, num_classes = 10, alpha = 0.2, betal = 0.5 ):
+        tf.reset_default_graph()
+
+        self.learning_rate = tf.Variable( learning_rate, trainable = False )
+        self.input_real, self.input_z, self.y, self.label_mask = model_inputs( real_size, z_size )
+
+        loss_results = model_loss( self.input_real, self.input_z,
+                                   real_size[2], self.y, num_classes, label_mask = self.label_mask,
+                                   alpha = 0.2, drop_rate = self.drop_rate )
+        self.d_loss, self.g_loss, self.correct, self.masked_correct, self.samples = loss_results
+
+        self.d_opt, self.g_opt, self.shrink_lr = model_opt( self.d_loss, self.g_loss, self.learning_rate, betal )
