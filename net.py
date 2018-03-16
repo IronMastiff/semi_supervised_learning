@@ -2,7 +2,7 @@ import pickle as pkl
 import time
 import os
 
-import matplotlib.pyplot as plot
+import matplotlib.pyplot as plt
 from scipy.io import matlab
 import tensorflow as tf
 import numpy as np
@@ -225,3 +225,92 @@ class GAN:
         self.d_loss, self.g_loss, self.correct, self.masked_correct, self.samples = loss_results
 
         self.d_opt, self.g_opt, self.shrink_lr = model_opt( self.d_loss, self.g_loss, self.learning_rate, betal )
+
+def view_samples( epoch, samples, nrows, ncols, figsize = ( 5, 5 ) ):
+    fig, axes = plt.subplots( figsize = figsize, nrows = nrows, ncols = nclos, sharey = True, sharex = True )
+    for ax, img in zip( axes.flatten(), samples[epoch] ):    # flatten() 去除数组中的一个维数
+        ax.axis( 'off' )
+        img = ( ( img - img.min() ) * 255 / ( img.max() - img.min() ) ).astype( np.uint8 )
+        ax.set_adjustable( 'box-forced' )
+        im = ax.imshow( img )
+
+    plt.subplots_adjust( wspace = 0, hspace = 0 )
+    return fig, axes
+
+def trian( net, dataset, epochs, batch_size, figsize = ( 5, 5 ) ):
+
+    saver = tf.train.Saver()
+    sample_z = np.random.normal( 0, 1, size = ( 50, z_size ) )
+
+    samples, train_accuracies, test_accuracies = [], [], []
+    steps = 0
+
+    with tf.Session() as sess:
+        sess.run( tf.global_variables_initializer() )
+        for e in range( epochs ):
+            print( 'Epoch', e )
+
+            t1e = time.time()
+            num_examples = 0
+            num_correct = 0
+            for x, y, label_mask in dataset.batches( batch_size ):
+                assert 'int' in str( y.dtype )
+                steps += 1
+                num_examples += label_mask.sum()    # .sum() numpy中的操作，把numpy对象中的数通通加起来
+
+                # Sample random noise for G
+                batch_z = np.random.normal( 0, 1, size = ( batch_size, z_size ) )
+
+                # Run optimizers
+                t1 = time.time()
+                _, _, correct = sess.run( [net.d_opt, net.g_opt, net.masked_correct],
+                                          feed_dict = {net.input_real : x,
+                                                       net.input_z : batch_z,
+                                                       net.y : y,
+                                                       net.label_mask : label_mask} )
+                t2 = time.time()
+                num_correct +=correct
+
+            sess.run( [net.shrink_lr] )
+
+
+            train_accuracy = num_correct / float( num_examples )
+
+            print( '\t\tClassifier train accuracy:', train_accuracy )
+
+            num_examples = 0
+            num_correct = 0
+            for x, y in dataset.batches( batch_size, which_set = 'test' ):
+                assert 'int' in str( y.dtype )
+                num_examples += x.shape[0]
+
+                correct, = sess.run( [net.correct], feed_dict = { net.input_real : x,
+                                                                  net.y : y,
+                                                                  net.drop_rate : 0} )
+                num_correct += correct
+
+            test_accuracy = num_correct / float( num_examples )
+            print( '\t\tClassifier test accuracy: ', test_accuracy )
+            print( '\t\tStep time: ', t2 - t1 )
+            t2e = time.time()
+            print( '\t\tEpoch time: ', t2e - t1e )
+
+            gen_samples = sess.run(
+                net.samples,
+                feed_dict = {net.input_z : sample_z} )
+            samples.append( gen_samples )
+            _ = view_samples( -1, samples, 5, 10, figsize = figsize )
+            plt.show()
+
+
+            # Save history of accuracies to view afrer training
+            train_accuracies.append( train_accuracy )
+            test_accuracies.append( test_accuracy )
+
+
+        saver.save( sess, './checkpoint/generator.ckpt' )
+
+    with open( 'samples.pkl', 'wb' ) as f:
+        pkl.dump( samples, f )
+
+    return train_accuracies, test_accuracies, samples
